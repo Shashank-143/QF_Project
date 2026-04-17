@@ -181,32 +181,12 @@ def env_step(state, action, action_threshold):
     # IMPROVED REWARD FUNCTION
     # ------------------------------
 
-    reward = equity_change / (state["initial_capital"] + 1e-8)
+    reward = equity_change / (abs(prev_equity) + 1e-8)
 
-    # cost penalty (stronger than before)
-    reward -= 0.5 * state["transaction_cost"] * abs(equity_change)
-
-    # discourage frequent switching
+# transaction cost penalty
     if position_changed:
-        reward -= 0.002
+        reward -= state["transaction_cost"] * 2.0
 
-    # ------------------------------
-    # SPREAD SIGNAL REWARD
-    # ------------------------------
-    spread_z = state["features"][safe_step][1]  # assumes z-score is index 1
-
-    # reward good entry zones (mean reversion logic)
-    reward += 0.01 * abs(spread_z)
-
-    # smooth spread movement reward
-    reward += 0.005 * (abs(spread_z - state["last_spread_z"]))
-
-    state["last_spread_z"] = spread_z
-
-    # ------------------------------
-    # STABILISE REWARD FOR PPO
-    # ------------------------------
-    reward = np.tanh(reward * 5.0)
 
     # ------------------------------
     # OBSERVATION

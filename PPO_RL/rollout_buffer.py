@@ -23,10 +23,11 @@ def create_rollout_buffer(rollout_steps: int, obs_dim: int):
         "returns":   np.zeros((rollout_steps, 1),       dtype=np.float32),
         "ptr":       0,
         "capacity":  rollout_steps,
+        "raw_action": np.zeros((rollout_steps, 1), dtype=np.float32)
     }
 
 
-def rollout_push(buffer, obs, action, reward, done, log_prob, value):
+def rollout_push(buffer, obs, action, reward, done, log_prob, value, raw_action):
     """Append one transition. Raises if buffer is already full."""
     idx = buffer["ptr"]
     if idx >= buffer["capacity"]:
@@ -39,6 +40,7 @@ def rollout_push(buffer, obs, action, reward, done, log_prob, value):
     buffer["log_prob"][idx] = log_prob
     buffer["value"][idx]    = value
     buffer["ptr"]           = idx + 1
+    buffer["raw_action"][idx] = raw_action
 
 
 def rollout_full(buffer) -> bool:
@@ -61,25 +63,29 @@ def compute_gae(buffer, last_value: float, gamma: float, gae_lambda: float):
 
     for t in reversed(range(n)):
         next_value = last_value if t == n - 1 else buffer["value"][t + 1, 0]
-        next_done  = buffer["done"][t, 0]
+        next_done  = 1.0 if t == n - 1 else buffer["done"][t + 1, 0]
 
-        delta = (buffer["reward"][t, 0]
-                 + gamma * next_value * (1.0 - next_done)
-                 - buffer["value"][t, 0])
-        gae   = delta + gamma * gae_lambda * (1.0 - next_done) * gae
+        delta = (
+        buffer["reward"][t, 0]
+        + gamma * next_value * (1.0 - next_done)
+        - buffer["value"][t, 0]
+        )
+
+        gae = delta + gamma * gae_lambda * (1.0 - next_done) * gae
 
         buffer["advantage"][t, 0] = gae
         buffer["returns"][t, 0]   = gae + buffer["value"][t, 0]
 
 
 def rollout_get_batches(buffer, mini_batch_size: int):
-    """
-    Yield randomised mini-batches of tensors from the completed rollout.
-    Normalises advantages across the whole rollout before yielding.
-    """
     n   = buffer["ptr"]
     adv = buffer["advantage"][:n].copy()
-    adv = (adv - adv.mean()) / (adv.std() + 1e-8)
+    
+    std = adv.std()
+    if std > 1e-6:
+        adv = (adv - adv.mean()) / (std + 1e-8)
+    else:
+        adv = adv - adv.mean()
 
     indices = np.random.permutation(n)
 
@@ -92,8 +98,8 @@ def rollout_get_batches(buffer, mini_batch_size: int):
             "value":     torch.FloatTensor(buffer["value"][idx]),
             "advantage": torch.FloatTensor(adv[idx]),
             "returns":   torch.FloatTensor(buffer["returns"][idx]),
+            "raw_action": torch.FloatTensor(buffer["raw_action"][idx]),
         }
-
 
 def rollout_clear(buffer):
     """Reset pointer so the buffer can be reused for the next rollout."""

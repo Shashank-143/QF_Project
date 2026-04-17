@@ -74,31 +74,27 @@ def get_value(net, obs):
 # ── Action sampling ───────────────────────────────────────────────────────────
 
 def sample_action(net, obs_np, deterministic: bool = False):
-    """
-    Sample a single action for environment interaction.
-    numpy in → (action_float, log_prob_float, value_float) out.
-    """
     obs  = torch.FloatTensor(obs_np).unsqueeze(0)
     mean, log_std, value = actor_critic_forward(net, obs)
 
+    std = log_std.exp()
+    dist = torch.distributions.Normal(mean, std)
+
     if deterministic:
-        action_raw = mean
-        log_prob   = torch.zeros(1, 1)
+        x_t = mean
     else:
-        std        = log_std.exp()
-        dist       = torch.distributions.Normal(mean, std)
-        x_t        = dist.rsample()
-        action_raw = x_t
+        x_t = dist.rsample()
 
-        log_prob   = dist.log_prob(x_t)
-        log_prob  -= torch.log(1 - torch.tanh(x_t).pow(2) + EPSILON)
-        log_prob   = log_prob.sum(dim=-1, keepdim=True)
+    action = torch.tanh(x_t)
 
-    action = torch.tanh(action_raw)
+    # log prob of RAW action (NOT tanh corrected)
+    log_prob = dist.log_prob(x_t).sum(dim=-1, keepdim=True)
+
     return (
-        action.squeeze().detach().numpy().item(),
-        log_prob.squeeze().detach().item(),
-        value.squeeze().detach().item(),
+        action.item(),                     # env action
+        log_prob.item(),
+        value.item(),
+        x_t.item()                        
     )
 
 
@@ -107,55 +103,46 @@ def sample_action_compat(net, obs_np, deterministic: bool = False):
     return action
 
 
-def evaluate_actions(net, obs, action):
-    """
-    Re-evaluate stored actions during the PPO update.
-    Returns log_prob, entropy, value for the given (obs, action) pairs.
-    """
+def evaluate_actions(net, obs, raw_action):
     mean, log_std, value = actor_critic_forward(net, obs)
     std  = log_std.exp()
     dist = torch.distributions.Normal(mean, std)
 
-    # Invert tanh to get the pre-squash action
-    action_clipped = torch.clamp(action, -1 + EPSILON, 1 - EPSILON)
-    x_t = torch.atanh(action_clipped)
-
-    log_prob  = dist.log_prob(x_t)
-    log_prob -= torch.log(1 - action.pow(2) + EPSILON)
-    log_prob  = log_prob.sum(dim=-1, keepdim=True)
+    log_prob = dist.log_prob(raw_action)
+    log_prob = log_prob.sum(dim=-1, keepdim=True)
 
     entropy = dist.entropy().sum(dim=-1, keepdim=True)
 
     return log_prob, entropy, value
 
-
 # ── PPO Loss ──────────────────────────────────────────────────────────────────
 
-def compute_ppo_loss(net, batch, clip_epsilon, value_coef, entropy_coef):
-    """
-    Combined PPO loss for one mini-batch:
-    L = -L_CLIP  +  value_coef * L_VALUE  -  entropy_coef * H
-    """
+def compute_ppo_loss(net, batch, clip_eps, value_coef, entropy_coef):
     obs       = batch["obs"]
-    action    = batch["action"]
-    old_lp    = batch["log_prob"]
-    advantage = batch["advantage"]
+    actions = batch["raw_action"]
+    old_logp  = batch["log_prob"]
     returns   = batch["returns"]
+    adv       = batch["advantage"]
 
-    log_prob, entropy, value = evaluate_actions(net, obs, action)
+    new_logp, entropy, values = evaluate_actions(net, obs, actions)
+    if torch.rand(1).item() < 0.02:
+        print("\n--- PPO DEBUG ---")
+        print("old_logp mean:", old_logp.mean().item())
+        print("new_logp mean:", new_logp.mean().item())
+        print("logp diff mean:", (new_logp - old_logp).mean().item())
+        print("adv mean:", adv.mean().item(), "std:", adv.std().item())
+        print("ratio mean:", torch.exp(new_logp - old_logp).mean().item())
+        print("-----------------\n")
 
-    # Policy loss — clipped surrogate objective
-    ratio       = torch.exp(log_prob - old_lp)
-    surr1       = ratio * advantage
-    surr2       = torch.clamp(ratio, 1.0 - clip_epsilon, 1.0 + clip_epsilon) * advantage
+    # HARD clamp log prob difference before exp to prevent ratio explosion
+    ratio = torch.exp(new_logp - old_logp)
+    
+    surr1 = ratio * adv
+    surr2 = torch.clamp(ratio, 1.0 - clip_eps, 1.0 + clip_eps) * adv
     policy_loss = -torch.min(surr1, surr2).mean()
 
-    # Value loss
-    value_loss   = F.mse_loss(value, returns)
+    value_loss   = 0.5 * (returns - values).pow(2).mean()
+    entropy_loss = entropy.mean()
+    loss = policy_loss + value_coef * value_loss - entropy_coef * entropy_loss
 
-    # Entropy bonus
-    entropy_mean = entropy.mean()
-
-    total_loss = policy_loss + value_coef * value_loss - entropy_coef * entropy_mean
-
-    return total_loss, policy_loss.item(), value_loss.item(), entropy_mean.item()
+    return loss, policy_loss.item(), value_loss.item(), entropy_loss.item()

@@ -77,7 +77,8 @@ def train_ppo(pairs, price_data):
     # ── Episode loop ──────────────────────────────────────────────────────────
     for episode in range(NUM_EPISODES):
 
-        selected = pair_train_data if MULTI_PAIR else [random.choice(pair_train_data)]
+        n_pairs = min(3, len(pair_train_data))
+        selected = random.sample(pair_train_data, n_pairs)
 
         ep_reward_total = 0.0
         ep_pnl_total    = 0.0
@@ -96,15 +97,15 @@ def train_ppo(pairs, price_data):
 
             while not done:
                 # Collect one transition
-                action, log_prob, value = agent_act(agent, obs)
+                action, log_prob, value, raw_action = agent_act(agent, obs)
                 next_obs, reward, done, _info = env_step(state, action, ACTION_THRESHOLD)
-                agent_push(agent, obs, action, reward, done, log_prob, value)
+                agent_push(agent, obs, action, reward, done, log_prob, value, raw_action)
 
                 obs              = next_obs
                 ep_reward_total += reward
 
                 # Fire PPO update when rollout buffer is full
-                if agent_buffer_full(agent):
+                if agent_buffer_size(agent) >= 512:
                     logs = ppo_update(agent, obs)
                     ep_policy_loss += logs["policy_loss"]
                     ep_value_loss  += logs["value_loss"]

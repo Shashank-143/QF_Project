@@ -1,15 +1,6 @@
-"""
-ppo_agent.py
-------------
-Encapsulates the full PPO update cycle:
-
-    collect rollout → compute GAE → K epochs of mini-batch updates → clear buffer
-
-train.py just calls agent_act() each step and ppo_update() when the buffer fills.
-"""
-
 import torch
 import torch.optim as optim
+import numpy as np
 
 from .networks import create_actor_critic, sample_action, get_value, compute_ppo_loss
 from .rollout_buffer import (
@@ -24,10 +15,6 @@ from .config import (
 
 
 def create_ppo_agent(obs_dim: int, action_dim: int = 1):
-    """
-    Initialise all PPO components and return as a single agent dict.
-    The agent dict is passed around in train.py — no global state.
-    """
     net       = create_actor_critic(obs_dim, action_dim, HIDDEN_DIM)
     optimizer = optim.Adam(net["params"], lr=LEARNING_RATE, eps=1e-5)
     buffer    = create_rollout_buffer(ROLLOUT_STEPS, obs_dim)
@@ -42,16 +29,16 @@ def create_ppo_agent(obs_dim: int, action_dim: int = 1):
 
 
 def agent_act(agent, obs_np, deterministic: bool = False):
-    """
-    Select an action for one environment step.
-    Returns (action, log_prob, value) — all three needed by the rollout buffer.
-    """
-    return sample_action(agent["net"], obs_np, deterministic=deterministic)
+    action, log_prob, value, raw_action = sample_action(
+        agent["net"], obs_np, deterministic=deterministic
+    )
+    return action, log_prob, value, raw_action
 
 
-def agent_push(agent, obs, action, reward, done, log_prob, value):
-    """Store one transition into the rollout buffer."""
-    rollout_push(agent["buffer"], obs, action, reward, done, log_prob, value)
+def agent_push(agent, obs, action, reward, done, log_prob, value, raw_action):
+    rollout_push(
+        agent["buffer"], obs, action, reward, done, log_prob, value, raw_action
+    )
 
 
 def agent_buffer_full(agent) -> bool:
@@ -63,15 +50,6 @@ def agent_buffer_size(agent) -> int:
 
 
 def ppo_update(agent, last_obs_np) -> dict:
-    """
-    Run a full PPO update on the current rollout:
-    1. Bootstrap V(s_T) from the last observation
-    2. Compute GAE advantages + returns
-    3. Run PPO_EPOCHS of mini-batch gradient updates
-    4. Clear the buffer
-
-    Returns a dict of mean losses for logging.
-    """
     net    = agent["net"]
     buf    = agent["buffer"]
     optim_ = agent["optimizer"]
@@ -89,6 +67,7 @@ def ppo_update(agent, last_obs_np) -> dict:
 
     for _ in range(PPO_EPOCHS):
         for batch in rollout_get_batches(buf, MINI_BATCH_SIZE):
+
             loss, pl, vl, ent = compute_ppo_loss(
                 net, batch, CLIP_EPSILON, VALUE_COEF, ENTROPY_COEF
             )
@@ -98,9 +77,9 @@ def ppo_update(agent, last_obs_np) -> dict:
             torch.nn.utils.clip_grad_norm_(net["params"], MAX_GRAD_NORM)
             optim_.step()
 
-            total_policy_loss += pl
-            total_value_loss  += vl
-            total_entropy     += ent
+            total_policy_loss += float(pl)
+            total_value_loss  += float(vl)
+            total_entropy     += float(ent)
             n_updates         += 1
 
     rollout_clear(buf)

@@ -45,8 +45,7 @@ def backtest(pair_test_data, net):
         done = False
 
         while not done:
-            # PPO ACTION (FIXED)
-            action, _, _ = sample_action(net, obs, deterministic=True)
+            action, _, _, _ = sample_action(net, obs, deterministic=True)
 
             obs, reward, done, info = env_step(
                 state,
