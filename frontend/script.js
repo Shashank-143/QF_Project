@@ -1,5 +1,13 @@
 const INITIAL_CAPITAL = 10000;
-const API_PATH = "/api/backtest_summary";
+const isLocal =
+  !window.location.hostname ||
+  window.location.hostname === "localhost" ||
+  window.location.hostname === "127.0.0.1";
+const API_BASE = isLocal ? "http://localhost:8000" : window.location.origin;
+const SUMMARY_PATH = `${API_BASE}/summary`;
+const POSITIVE_PAIRS_PATH = `${API_BASE}/pairs/positive`;
+const NEGATIVE_PAIRS_PATH = `${API_BASE}/pairs/negative`;
+const BACKTEST_SUMMARY_PATH = `${API_BASE}/backtest_summary`;
 const DEFAULT_MODEL = "SAC";
 let selectedModel = DEFAULT_MODEL;
 
@@ -28,25 +36,11 @@ const fields = {
   detailExit: "t-exit-price",
   detailFinal: "t-finaleq",
   detailPnl: "t-pnl",
-  detailAction: "t-action",
 };
 
 function setText(id, value) {
   const el = document.getElementById(id);
   if (el) el.textContent = value;
-}
-
-function setActionTag(action) {
-  const el = document.getElementById(fields.detailAction);
-  if (!el) return;
-  el.classList.remove("long", "short", "hold");
-  if (action === "LONG") {
-    el.classList.add("long");
-  } else if (action === "SHORT") {
-    el.classList.add("short");
-  } else {
-    el.classList.add("hold");
-  }
 }
 
 function parseNumber(value) {
@@ -65,6 +59,15 @@ function fmtINR(amount) {
 function fmtPct(value) {
   if (value == null || Number.isNaN(value)) return "—";
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
+}
+
+function fmtPricePair(priceA, priceB) {
+  const parsedA = parseNumber(priceA);
+  const parsedB = parseNumber(priceB);
+  if (!Number.isFinite(parsedA) && !Number.isFinite(parsedB)) return "—";
+  if (!Number.isFinite(parsedB)) return fmtINR(parsedA);
+  if (!Number.isFinite(parsedA)) return fmtINR(parsedB);
+  return `${fmtINR(parsedA)} / ${fmtINR(parsedB)}`;
 }
 
 function clearChildren(container) {
@@ -103,7 +106,7 @@ function createPairItem(pair) {
   return li;
 }
 
-function renderPairLists(summary) {
+function renderPairLists(positivePairs, negativePairs) {
   const positive = document.getElementById(fields.positiveList);
   const negative = document.getElementById(fields.negativeList);
   if (!positive || !negative) return;
@@ -111,16 +114,13 @@ function renderPairLists(summary) {
   clearChildren(positive);
   clearChildren(negative);
 
-  const positives = summary.filter((item) => item.pair_type === "positive");
-  const negatives = summary.filter((item) => item.pair_type === "negative");
-
-  positives.forEach((item) => positive.appendChild(createPairItem(item)));
-  negatives.forEach((item) => negative.appendChild(createPairItem(item)));
+  positivePairs.forEach((item) => positive.appendChild(createPairItem(item)));
+  negativePairs.forEach((item) => negative.appendChild(createPairItem(item)));
 
   const positiveCount = document.querySelector(".pairs-block.positive .count");
   const negativeCount = document.querySelector(".pairs-block.negative .count");
-  if (positiveCount) positiveCount.textContent = positives.length;
-  if (negativeCount) negativeCount.textContent = negatives.length;
+  if (positiveCount) positiveCount.textContent = positivePairs.length;
+  if (negativeCount) negativeCount.textContent = negativePairs.length;
 }
 
 function renderSummaryTable(summary) {
@@ -129,12 +129,13 @@ function renderSummaryTable(summary) {
 
   clearChildren(body);
   summary.forEach((pair) => {
+    const tradeCount = pair.trade_count ?? "—";
     const row = document.createElement("tr");
     row.innerHTML = `
       <td>${pair.pair}</td>
       <td>${pair.pair_type}</td>
       <td>${fmtINR(pair.pnl)}</td>
-      <td>${pair.trade_count}</td>
+      <td>${tradeCount}</td>
       <td>${typeof pair.sharpe === "number" ? pair.sharpe.toFixed(2) : "—"}</td>
       <td>${typeof pair.max_drawdown === "number" ? fmtPct(-pair.max_drawdown * 100) : "—"}</td>
     `;
@@ -225,15 +226,13 @@ function selectPair(pair) {
   setText(fields.detailCapitalAfter, "—");
   setText(fields.detailFinal, fmtINR(pair.equity));
   setText(fields.detailPnl, fmtINR(pair.pnl));
-  setText(fields.detailAction, "—");
-  setActionTag("HOLD");
 
   loadPairDetails(pair.pair);
 }
 
 async function loadPairDetails(pairName) {
   try {
-    const response = await fetch(`/api/pair/${encodeURIComponent(pairName)}`);
+    const response = await fetch(`${API_BASE}/pair/${encodeURIComponent(pairName)}`);
     if (!response.ok) throw new Error("Unable to load pair details");
     const detail = await response.json();
 
@@ -247,11 +246,11 @@ async function loadPairDetails(pairName) {
     setText(fields.detailSharesB, Number.isFinite(sharesB) && sharesB !== 0 ? sharesB.toFixed(2) : "—");
     setText(fields.detailCost, fmtINR(detail.total_cost));
     setText(fields.detailCapitalAfter, fmtINR(detail.capital_after));
-    setText(fields.detailEntry, Number.isFinite(parseNumber(detail.entry_price)) ? fmtINR(detail.entry_price) : "—");
-    setText(fields.detailExit, Number.isFinite(parseNumber(detail.exit_price)) ? fmtINR(detail.exit_price) : "—");
-    const actionValue = detail.action || (parseNumber(detail.pnl) >= 0 ? "LONG" : "SHORT");
-    setText(fields.detailAction, actionValue);
-    setActionTag(actionValue);
+    setText(fields.detailEntry, fmtPricePair(detail.entry_price_a, detail.entry_price_b));
+    setText(fields.detailExit, fmtPricePair(detail.exit_price_a, detail.exit_price_b));
+    setText(fields.detailFinal, fmtINR(detail.final_equity));
+    setText(fields.detailPnl, fmtINR(detail.total_pnl));
+    setText(fields.detailQty, detail.trade_count ?? "—");
   } catch (error) {
     console.error(error);
   }
@@ -263,20 +262,51 @@ function setActiveModel(model) {
     btn.classList.toggle("active", btn.dataset.model === model);
   });
   setText(fields.detailModel, model);
+  updateTogglePill();
+}
+
+function updateTogglePill() {
+  const toggle = document.querySelector(".model-toggle");
+  const pill = toggle?.querySelector(".toggle-pill");
+  const active = toggle?.querySelector(".toggle-btn.active");
+  if (!toggle || !pill || !active) return;
+
+  const toggleRect = toggle.getBoundingClientRect();
+  const activeRect = active.getBoundingClientRect();
+  const offset = activeRect.left - toggleRect.left;
+
+  pill.style.width = `${activeRect.width}px`;
+  pill.style.transform = `translateX(${offset}px)`;
 }
 
 async function loadDashboard() {
   try {
-    const response = await fetch(API_PATH);
-    if (!response.ok) throw new Error("Unable to load backend summary");
+    const [summaryResponse, positiveResponse, negativeResponse, backtestResponse] = await Promise.all([
+      fetch(SUMMARY_PATH),
+      fetch(POSITIVE_PAIRS_PATH),
+      fetch(NEGATIVE_PAIRS_PATH),
+      fetch(BACKTEST_SUMMARY_PATH),
+    ]);
 
-    const payload = await response.json();
+    if (!summaryResponse.ok) throw new Error("Unable to load backend summary");
+    if (!positiveResponse.ok) throw new Error("Unable to load positive pairs");
+    if (!negativeResponse.ok) throw new Error("Unable to load negative pairs");
+    if (!backtestResponse.ok) throw new Error("Unable to load backtest summary");
+
+    const payload = await summaryResponse.json();
+    const positivePayload = await positiveResponse.json();
+    const negativePayload = await negativeResponse.json();
+    const backtestPayload = await backtestResponse.json();
+
     const summary = Array.isArray(payload.summary) ? payload.summary : [];
     const stats = payload.stats || null;
+    const positivePairs = Array.isArray(positivePayload.pairs) ? positivePayload.pairs : [];
+    const negativePairs = Array.isArray(negativePayload.pairs) ? negativePayload.pairs : [];
+    const backtestSummary = Array.isArray(backtestPayload.summary) ? backtestPayload.summary : [];
 
     renderStats(summary, stats);
-    renderPairLists(summary);
-    renderSummaryTable(summary);
+    renderPairLists(positivePairs, negativePairs);
+    renderSummaryTable(backtestSummary);
     renderChart(summary);
 
     if (summary.length > 0) {
@@ -293,7 +323,10 @@ async function loadDashboard() {
 
 window.addEventListener("DOMContentLoaded", () => {
   loadDashboard();
+  setActiveModel(selectedModel);
   document.querySelectorAll(".toggle-btn").forEach((btn) => {
     btn.addEventListener("click", () => setActiveModel(btn.dataset.model));
   });
+
+  window.addEventListener("resize", updateTogglePill);
 });
