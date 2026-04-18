@@ -1,0 +1,12 @@
+Metric,Value
+MSE,1.528437
+RMSE,1.2363
+MAE,0.856781
+R2_Score,-0.5346180200576782
+Directional_Hit_Ratio_%,50.93
+Baseline_MSE_zero,0.995972
+MSE_reduction_%,-53.46
+Num_Stocks,29.0
+Trading_Days,2468.0
+Total_Parameters,2250.0
+Lookback_Window,20.0
