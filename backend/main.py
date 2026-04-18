@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from data_loader import load_data
 from model_loader import load_actor
@@ -22,6 +23,7 @@ CONFIG = {
 }
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+FRONTEND_DIR = os.path.join(REPO_ROOT, "frontend")
 POSITIVE_PAIRS_PATH = os.path.join(REPO_ROOT, "notebooks", "discovered_positive_pairs.csv")
 NEGATIVE_PAIRS_PATH = os.path.join(REPO_ROOT, "notebooks", "discovered_negative_pairs.csv")
 BACKTEST_SUMMARY_PATH = os.path.join(REPO_ROOT, "SAC_RL", "results", "backtest_summary.csv")
@@ -178,14 +180,6 @@ def _find_pair_data(pair_name):
 # ROUTES
 # =========================
 
-@app.get("/")
-def root():
-    return {
-        "status": "RL Trading Backend Running",
-        "pairs_loaded": len(pair_data)
-    }
-
-
 # -------------------------
 # Run full inference
 # -------------------------
@@ -266,3 +260,6 @@ def reload_data():
         "message": "Data reloaded",
         "pairs_loaded": len(pair_data)
     }
+
+
+app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
