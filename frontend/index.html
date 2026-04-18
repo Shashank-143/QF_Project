@@ -1,22 +1,202 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0a0d12" />
+    <meta name="description" content="GNN + RL Trading — Pair discovery via Graph Neural Networks and reinforcement-learning (SAC/PPO) execution on NSE." />
 
-    <title>Pairs Trading</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
 
-    <meta name="description" content="Pairs trading analysis dashboard" />
-    <meta name="author" content="Your Name" />
-
-    <!-- Open Graph -->
-    <meta property="og:title" content="Pairs Trading" />
-    <meta property="og:description" content="Pairs trading analysis dashboard" />
-    <meta property="og:type" content="website" />
-    <meta property="og:image" content="/preview.png" />
-
+    <title>GNN + RL Trading · Pair Discovery Dashboard</title>
+  </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <noscript>This dashboard needs JavaScript. Please enable it.</noscript>
+
+    <main class="app-shell" data-testid="dashboard-root">
+      <!-- ============================================================ TOP BAR -->
+      <header class="top-bar" data-testid="top-bar">
+        <div class="brand" data-testid="brand">
+          <div class="brand-mark">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="5" cy="6" r="2"></circle>
+              <circle cx="19" cy="6" r="2"></circle>
+              <circle cx="5" cy="18" r="2"></circle>
+              <circle cx="19" cy="18" r="2"></circle>
+              <circle cx="12" cy="12" r="2.2"></circle>
+              <line x1="7" y1="6" x2="10" y2="11"></line>
+              <line x1="17" y1="6" x2="14" y2="11"></line>
+              <line x1="7" y1="18" x2="10" y2="13"></line>
+              <line x1="17" y1="18" x2="14" y2="13"></line>
+            </svg>
+          </div>
+          <div class="brand-text">
+            <h1>GNN + SAC Trading</h1>
+            <div class="brand-sub">Pair discovery · NSE · SAC dashboard</div>
+          </div>
+        </div>
+
+        <div class="pipeline" aria-label="Pipeline" data-testid="pipeline-strip">
+          <span><span class="dot"></span> GNN</span>
+          <span class="arrow">→</span>
+          <span>Pair Discovery</span>
+          <span class="arrow">→</span>
+          <span>SAC / PPO</span>
+          <span class="arrow">→</span>
+          <span>Backtest</span>
+        </div>
+
+        <div class="model-toggle" role="tablist" aria-label="Model" data-testid="model-toggle">
+          <div class="toggle-pill" aria-hidden="true"></div>
+          <button class="toggle-btn active" data-model="SAC" data-testid="toggle-sac" role="tab">SAC</button>
+          <button class="toggle-btn" data-model="PPO" data-testid="toggle-ppo" role="tab">PPO</button>
+        </div>
+      </header>
+
+      <!-- ============================================================ HERO -->
+      <section class="hero-grid">
+        <!-- Portfolio stats -->
+        <aside class="card stats-card" data-testid="portfolio-stats-card">
+          <div class="stats-head">
+            <div>
+              <div class="eyebrow">Portfolio · Aggregate</div>
+              <h2>Final Performance</h2>
+            </div>
+            <div class="stats-pill">₹10,000 / trade</div>
+          </div>
+
+          <div class="equity-block">
+            <div class="label">Final Equity</div>
+            <div class="value" id="stat-final" data-testid="stat-final">₹0</div>
+            <div class="delta" id="stat-delta" data-testid="stat-delta">+0.00%</div>
+          </div>
+
+          <div class="stat-grid">
+            <div class="stat-item">
+              <span class="k">Initial Capital</span>
+              <span class="v" id="stat-initial" data-testid="stat-initial">₹0</span>
+            </div>
+            <div class="stat-item">
+              <span class="k">Total PnL</span>
+              <span class="v pos" id="stat-pnl" data-testid="stat-pnl">₹0</span>
+            </div>
+            <div class="stat-item">
+              <span class="k">Sharpe Ratio</span>
+              <span class="v" id="stat-sharpe" data-testid="stat-sharpe">—</span>
+            </div>
+            <div class="stat-item">
+              <span class="k">Alpha</span>
+              <span class="v" id="stat-alpha" data-testid="stat-alpha">—</span>
+            </div>
+            <div class="stat-item">
+              <span class="k">Max Drawdown</span>
+              <span class="v neg" id="stat-dd" data-testid="stat-dd">—</span>
+            </div>
+            <div class="stat-item">
+              <span class="k">Number of Trades</span>
+              <span class="v" id="stat-ntrades" data-testid="stat-ntrades">—</span>
+            </div>
+          </div>
+        </aside>
+
+        <!-- Live chart -->
+        <section class="card chart-card" data-testid="chart-card">
+          <div class="chart-head">
+            <div class="chart-title-group">
+              <div>
+                <div class="eyebrow">Equity curves · All pairs</div>
+                <h2>Trading Chart</h2>
+              </div>
+            </div>
+          </div>
+
+          <div class="chart-body" data-testid="chart-body">
+            <div class="legend" id="legend" data-testid="chart-legend" aria-label="Legend"></div>
+            <svg id="chart" role="img" aria-label="Equity curves for all pairs" data-testid="chart-svg"></svg>
+          </div>
+        </section>
+      </section>
+
+      <!-- ============================================================ TRADE DETAILS -->
+      <section class="details-row">
+        <div class="card details-card" data-testid="trade-details-card">
+          <div class="details-head">
+            <div class="details-head-left">
+              <div class="eyebrow">Trade details · Selected pair</div>
+              <h2>
+                <span id="t-pairname" data-testid="t-pairname">—</span>
+                <span class="pair-tag" id="t-pairtag" data-testid="t-pairtag">—</span>
+              </h2>
+            </div>
+          </div>
+
+          <div class="detail-grid">
+            <div class="detail"><span class="k">Model</span><span class="v" id="t-model" data-testid="t-model">SAC</span></div>
+            <div class="detail"><span class="k">Shares A</span><span class="v" id="t-shares-a" data-testid="t-shares-a">—</span></div>
+            <div class="detail"><span class="k">Shares B</span><span class="v" id="t-shares-b" data-testid="t-shares-b">—</span></div>
+            <div class="detail"><span class="k">Transaction Cost</span><span class="v" id="t-cost" data-testid="t-cost">—</span></div>
+
+            <div class="detail"><span class="k">Entry Price</span><span class="v" id="t-entry-price" data-testid="t-entry-price">—</span></div>
+            <div class="detail"><span class="k">Exit Price</span><span class="v" id="t-exit-price" data-testid="t-exit-price">—</span></div>
+            <div class="detail"><span class="k">Capital After</span><span class="v" id="t-capital-after" data-testid="t-capital-after">—</span></div>
+            <div class="detail"><span class="k">Final Equity</span><span class="v warm" id="t-finaleq" data-testid="t-finaleq">—</span></div>
+            <div class="detail"><span class="k">Total PnL</span><span class="v pos" id="t-pnl" data-testid="t-pnl">—</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================ PAIR LISTINGS -->
+      <section class="pairs-grid">
+        <div class="card pairs-block positive" data-testid="positive-pairs-block">
+          <div class="block-head">
+            <span class="tag-dot"></span>
+            <h3>Positive Pairs</h3>
+            <span class="count" data-type="positive">—</span>
+          </div>
+          <ul class="pair-list" id="positive-list" data-testid="positive-list"></ul>
+        </div>
+        <div class="card pairs-block negative" data-testid="negative-pairs-block">
+          <div class="block-head">
+            <span class="tag-dot"></span>
+            <h3>Negative Pairs</h3>
+            <span class="count" data-type="negative">—</span>
+          </div>
+          <ul class="pair-list" id="negative-list" data-testid="negative-list"></ul>
+        </div>
+      </section>
+
+      <!-- ============================================================ SUMMARY TABLE -->
+      <section class="summary-section" data-testid="summary-section">
+        <div class="section-title">
+          <div>
+            <div class="eyebrow">Section 02</div>
+            <h2>Backtest Summary</h2>
+          </div>
+        </div>
+        <div class="card table-card" data-testid="summary-table-card">
+          <table class="summary-table" data-testid="summary-table">
+            <thead>
+              <tr>
+                <th>Pair Name</th>
+                <th>Type</th>
+                <th>Profit (₹)</th>
+                <th># Trades</th>
+                <th>Sharpe</th>
+                <th>Max Drawdown</th>
+              </tr>
+            </thead>
+            <tbody id="summary-tbody"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script src="./script.js"></script>
   </body>
 </html>

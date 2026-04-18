@@ -22,14 +22,14 @@ def load_pairs(pos_path, neg_path, strength_threshold=1e-6, top_k=None):
     # Positive pairs
     for _, row in pos_df.iterrows():
         strength = float(row["Strength"])
-        if strength < strength_threshold:
+        if abs(strength) < strength_threshold:
             continue
         pairs.append((row["Stock_A"], row["Stock_B"], "positive", strength))
 
     # Negative pairs
     for _, row in neg_df.iterrows():
         strength = float(row["Strength"])
-        if strength < strength_threshold:
+        if abs(strength) < strength_threshold:
             continue
         pairs.append((row["Stock_A"], row["Stock_B"], "negative", strength))
 
