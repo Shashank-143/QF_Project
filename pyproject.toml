@@ -15,4 +15,5 @@ dependencies = [
     "matplotlib>=3.10.0",
     "fastapi>=0.135.3",
     "uvicorn>=0.44.0",
+    "seaborn>=0.13.2",
 ]
