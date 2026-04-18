@@ -12,16 +12,8 @@ def _count_trades(trade_log):
 
 
 def _last_trade_details(trade_log):
-    last_open = None
-    last_close = None
-
-    for trade in trade_log:
-        action = trade.get("action")
-        if action in ("OPEN_LONG", "OPEN_SHORT"):
-            last_open = trade
-        elif action == "CLOSE":
-            last_close = trade
-
+    """Extract details from the LAST completed trade cycle (paired open-close)."""
+    
     details = {
         "shares_a": None,
         "shares_b": None,
@@ -34,8 +26,35 @@ def _last_trade_details(trade_log):
         "action": "HOLD",
     }
 
-    open_cost = None
-    close_cost = None
+    # Find the last CLOSE trade
+    last_close_idx = None
+    for i in range(len(trade_log) - 1, -1, -1):
+        if trade_log[i].get("action") == "CLOSE":
+            last_close_idx = i
+            break
+
+    if last_close_idx is None:
+        # No closed trade, find the last open
+        for i in range(len(trade_log) - 1, -1, -1):
+            if trade_log[i].get("action") in ("OPEN_LONG", "OPEN_SHORT"):
+                trade = trade_log[i]
+                details["shares_a"] = float(trade.get("shares_a", 0.0))
+                details["shares_b"] = float(trade.get("shares_b", 0.0))
+                details["entry_price_a"] = float(trade.get("price_a", 0.0))
+                details["entry_price_b"] = float(trade.get("price_b", 0.0))
+                details["action"] = "LONG" if trade.get("action") == "OPEN_LONG" else "SHORT"
+                details["total_cost"] = float(trade.get("cost", 0.0))
+                break
+        return details
+
+    # We have a last close, find the matching open before it
+    last_close = trade_log[last_close_idx]
+    last_open = None
+    
+    for i in range(last_close_idx - 1, -1, -1):
+        if trade_log[i].get("action") in ("OPEN_LONG", "OPEN_SHORT"):
+            last_open = trade_log[i]
+            break
 
     if last_open:
         details["shares_a"] = float(last_open.get("shares_a", 0.0))
@@ -43,16 +62,13 @@ def _last_trade_details(trade_log):
         details["entry_price_a"] = float(last_open.get("price_a", 0.0))
         details["entry_price_b"] = float(last_open.get("price_b", 0.0))
         details["action"] = "LONG" if last_open.get("action") == "OPEN_LONG" else "SHORT"
-        open_cost = last_open.get("cost")
+        open_cost = last_open.get("cost", 0.0)
+        close_cost = last_close.get("cost", 0.0)
+        details["total_cost"] = float(open_cost + close_cost)
 
-    if last_close:
-        details["exit_price_a"] = float(last_close.get("price_a", 0.0))
-        details["exit_price_b"] = float(last_close.get("price_b", 0.0))
-        details["capital_after"] = float(last_close.get("capital_after", 0.0))
-        close_cost = last_close.get("cost")
-
-    if open_cost is not None or close_cost is not None:
-        details["total_cost"] = float((open_cost or 0.0) + (close_cost or 0.0))
+    details["exit_price_a"] = float(last_close.get("price_a", 0.0))
+    details["exit_price_b"] = float(last_close.get("price_b", 0.0))
+    details["capital_after"] = float(last_close.get("capital_after", 0.0))
 
     return details
 

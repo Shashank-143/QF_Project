@@ -28,7 +28,12 @@ def env_reset(prices_a, prices_b, features, pair_type, initial_capital, transact
 
 
 def _calculate_unrealised_pnl(state, step):
-    """Compute unrealised PnL for the current open position."""
+    """Compute unrealised PnL for the current open position.
+    
+    For both positive and negative pairs, use hedge strategy:
+    - LONG: Long A, Short B
+    - SHORT: Short A, Long B
+    """
 
     if state["position"] == 0:
         return 0.0
@@ -36,20 +41,13 @@ def _calculate_unrealised_pnl(state, step):
     curr_a = state["prices_a"][step]
     curr_b = state["prices_b"][step]
 
-    if state["pair_type"] == "positive":
-        if state["position"] == 1:
-            pnl_a = (curr_a - state["entry_price_a"]) * state["shares_a"]
-            pnl_b = (state["entry_price_b"] - curr_b) * state["shares_b"]
-        else:
-            pnl_a = (state["entry_price_a"] - curr_a) * state["shares_a"]
-            pnl_b = (curr_b - state["entry_price_b"]) * state["shares_b"]
-    else:
-        if state["position"] == 1:
-            pnl_a = (curr_a - state["entry_price_a"]) * state["shares_a"]
-            pnl_b = (curr_b - state["entry_price_b"]) * state["shares_b"]
-        else:
-            pnl_a = (state["entry_price_a"] - curr_a) * state["shares_a"]
-            pnl_b = (state["entry_price_b"] - curr_b) * state["shares_b"]
+    # Both positive and negative pairs use the same spread hedge logic
+    if state["position"] == 1:  # LONG: long A, short B
+        pnl_a = (curr_a - state["entry_price_a"]) * state["shares_a"]
+        pnl_b = (state["entry_price_b"] - curr_b) * state["shares_b"]
+    else:  # SHORT: short A, long B
+        pnl_a = (state["entry_price_a"] - curr_a) * state["shares_a"]
+        pnl_b = (curr_b - state["entry_price_b"]) * state["shares_b"]
 
     return pnl_a + pnl_b
 
